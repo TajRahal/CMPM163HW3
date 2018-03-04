@@ -1,0 +1,248 @@
+
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Homework 3 Part B</title>
+		<meta charset="utf-8">
+		<style>
+			body {
+			  	margin: 0px;
+				overflow: hidden;
+			}
+		</style>
+	</head>
+<body>
+
+<div id="container"></div>
+
+    <script src="js/three.js"></script>
+    <script id="vertexShader" type="x-shader/x-vertex">
+
+
+	uniform mat4 modelViewMatrix;
+	uniform mat4 projectionMatrix;
+	
+    attribute vec3 position;
+
+	void main() {
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); 
+	}
+
+    </script>
+
+
+    <script id="fragmentShader" type="x-shader/x-fragment">
+
+	precision mediump float;
+	uniform float rx, ry, time;
+
+	float sdBox( vec3 p, vec3 b ) //simple box
+{
+  vec3 d = abs(p) - b;
+  return min(max(d.x,max(d.y,d.z)),0.0) + length(max(d,0.0));
+}
+	
+	float opTx( vec3 p, mat3 m ) //rotation function
+{
+    vec3 q = m*p;
+    return sdBox(q, vec3(0.5, 0.5, 0.5));
+}
+
+	float opRep( vec3 p, vec3 c ) //replication function
+{
+    vec3 q = mod(p,c)-0.5*c;
+    return sdBox( q, vec3(0.5, 0.5, 0.5) );
+}
+
+float opU( float d1, float d2 ) //union function
+{
+    return min(d1,d2);
+}
+
+	float map( in vec3 p, in mat3 m ) //final map of the scene
+	{
+	if (sin(time/100.0) < 0.2) { //make sure cube is the starting object
+		return opTx (p, m);
+	}
+	else { 
+		return mix(opU(opTx(p,m), opRep(p, vec3(3.0, 3.0, 3.0))), opTx (p, m), sin(time/11.0)); //unite and mix the cube and the repeated cube values over time
+	}
+	}
+	
+	mat3 rotationMatrix(vec3 axis, float angle) //rotation matrix
+{
+    axis = normalize(axis);
+    float s = sin(angle);
+    float c = cos(angle);
+    float oc = 1.0 - c;
+    
+    return mat3(oc * axis.x * axis.x + c,           oc * axis.x * axis.y - axis.z * s,  oc * axis.z * axis.x + axis.y * s,
+                oc * axis.x * axis.y + axis.z * s,  oc * axis.y * axis.y + c,           oc * axis.y * axis.z - axis.x * s,
+                oc * axis.z * axis.x - axis.y * s,  oc * axis.y * axis.z + axis.x * s,  oc * axis.z * axis.z + c);
+}
+
+//Where the SFD functions intersect
+float intersect( vec3 ro, vec3 rd )
+{
+	mat3 m = rotationMatrix(vec3(1.0, 1.0, 0.0), (30.0*sin(time/150.0)));
+	mat3 n = rotationMatrix(vec3(1.0, 0.0, 0.0), (30.0*sin(time/150.0)));
+    const float maxd = 20.0;
+	float h          = 1.0;
+    float t          = 0.0;
+    for( int i=0; i<50; i++ )
+    {
+        if( h<0.001 || t>maxd ) break;
+	    h = map( ro+rd*t, m*n );
+        t += h;
+    }
+
+    if( t>maxd ) t=-1.0;
+	
+    return t;
+}
+
+//Lighting Function
+vec3 pointlight( in vec3 pos, in vec3 lgt, in vec3 col, float intensity ){
+    float distance    = length(lgt - pos);
+    float attenuation = intensity / (distance * distance);
+    vec3 color        = col * attenuation;
+    return color;
+}
+
+
+vec3 lighting( in vec3 pos ) {
+    float s  = 1.0;
+    float a1 = 0.0 * 3.1416 / 3.0 + s*0.5*time;
+    float a2 = 1.0 * 3.1416 / 3.0 + s*0.3*time;
+    float a3 = 1.0 * 3.1416 / 3.0 + s*0.1*time;
+    float r1 = 1.0;
+    float r2 = 1.0;
+    float r3 = 1.0;
+    return pointlight(pos, vec3(r1 * cos(a1), 1.0, r1 * sin(a1)), vec3( 1.0, 0.0, 0.0), 2.0)
+    +      pointlight(pos, vec3(r2 * cos(a2), 1.0, r2 * sin(a2)), vec3( 0.0, 1.0, 0.0), 2.0)
+    +      pointlight(pos, vec3(r3 * cos(a3), 1.0, r3 * sin(a3)), vec3( 0.0, 0.0, 1.0), 2.0)
+    ;
+}
+
+void main()
+{
+    // `q` is the normalized position of the current shaded pixel
+	vec2 q = gl_FragCoord.xy / vec2(rx, ry);
+    // `p` is positioned so that [0,0] is at the center of the screen
+    vec2 p = 2.0 * q - 1.0;
+    // sets aspect ration to `p 
+    p.x *= rx/ry;  
+    
+    // `ro` is the camera origin where the rays are cast
+	vec3 ro = vec3(0.0, 0.0, 2.0 );
+    
+    // `rd` is the ray delta, ie. it's normalized direction
+    vec3 rd = normalize( vec3(p,-1.0) );
+	
+    // col is the color of the pixel, black by default.
+	vec3 col = vec3(0.0);
+
+    // `t` will hold the distance to the intersection with the scene
+    float t = intersect(ro,rd);
+    if( t>0.0 )
+    {
+        // `pos` is the point found by interesect, ie. the point of 
+        // where the ray interseted the scene.
+        vec3 pos = ro + t*rd;
+        // We call the basic `lighting` function to see the point lights
+        // in action.
+        col  = lighting(pos);
+    }
+	// We assign the color we've just computed.
+    gl_FragColor = vec4( col, 1.0 );
+}
+	</script>
+
+
+	<script>
+				
+  	var container;
+
+	var camera, scene, renderer;
+
+    var vs = document.getElementById( 'vertexShader' ).textContent;
+    var fs = document.getElementById( 'fragmentShader' ).textContent;
+
+	var mesh;
+	
+	init();
+	animate();
+
+
+	function init() {
+
+		container = document.getElementById( 'container' );
+
+		camera = new THREE.PerspectiveCamera( 60.0, window.innerWidth / window.innerHeight, 0.1, 50 );
+		camera.position.z = 2;
+		var width = window.innerWidth;
+		var height = window.innerHeight;
+
+		scene = new THREE.Scene();
+
+		
+		var plane = new THREE.PlaneBufferGeometry( window.innerWidth, window.innerHeight )
+
+		var uniforms = {
+            rx: {type: "f", value: window.innerWidth},
+            ry: {type: "f", value: window.innerHeight},
+			time: {type: "f", value: 0.0},
+        };
+		var material = new THREE.RawShaderMaterial( {
+			uniforms: uniforms,
+			vertexShader: vs,
+			fragmentShader: fs,
+		} );
+
+		var fullScreenQuad = new THREE.Mesh( plane, material );
+		scene.add(fullScreenQuad);
+
+		renderer = new THREE.WebGLRenderer();
+		renderer.setClearColor( 0x999999 );
+		renderer.setSize( window.innerWidth, window.innerHeight );
+		container.appendChild( renderer.domElement );
+
+
+		//make it so that resizing the browser window also resizes the scene
+		window.addEventListener( 'resize', onWindowResize, false );
+		
+	}
+
+
+
+	function animate() {
+
+		requestAnimationFrame( animate );
+		render();
+
+	}
+
+	function render() {
+
+		var time = performance.now();
+		var object1 = scene.children[ 0 ];
+		object1.material.uniforms.time.value = time * 0.005;
+		renderer.render( scene, camera );
+		
+	}
+
+	function onWindowResize( event ) {
+
+		camera.aspect = window.innerWidth / window.innerHeight;
+		camera.updateProjectionMatrix();
+
+		renderer.setSize( window.innerWidth, window.innerHeight );
+
+	}
+
+
+		</script>
+
+	</body>
+</html>
+
